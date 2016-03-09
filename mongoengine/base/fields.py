@@ -203,6 +203,10 @@ class ComplexBaseField(BaseField):
 
     field = None
 
+    def __init__(self, auto_dereference=True, *args, **kwargs):
+        super(ComplexBaseField, self).__init__(*args, **kwargs)
+        self._auto_dereference = auto_dereference
+
     def __get__(self, instance, owner):
         """Descriptor to automatically dereference references.
         """

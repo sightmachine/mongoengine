@@ -677,7 +677,7 @@ class BaseDocument(object):
             fields = copy.copy(fields)
 
         for field_name, field in fields.iteritems():
-            field._auto_dereference = _auto_dereference
+            field._auto_dereference &= _auto_dereference
             if field.db_field in data:
                 value = data[field.db_field]
                 try:
