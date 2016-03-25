@@ -2,7 +2,12 @@
 Changelog
 =========
 
-Changes in 0.9.0-sm1
+Changes in 0.9.0+sm2
+====================
+- Extended auto_dereference=False to skip more redundant operations while saving
+  and loading huge data structures.
+
+Changes in 0.9.0+sm1
 ====================
 - Added option to disable auto-dereferencing on specific fields to improve
   performance when accessing large data structures without embedded documents
