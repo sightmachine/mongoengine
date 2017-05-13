@@ -565,31 +565,6 @@ class BaseDocument(object):
                     changed_fields, key, data, inspected)
         return changed_fields
 
-    @staticmethod
-    def _prune_changed_fields(changed_fields):
-        """Remove redundant fields from the list of changed fields.
-
-        >>> sorted(BaseDocument._prune_changed_fields(['a', 'b', 'b.c', 'c.d']))
-        ['a', 'b', 'c.d']
-
-        """
-        parents = set()
-        for key in sorted(changed_fields, key=len):
-            key_prefix = ''
-            has_parent = False
-            for key_part in key.split('.'):
-                if not key_prefix:
-                    key_prefix = key_part
-                else:
-                    key_prefix = '%s.%s' % (key_prefix, key_part)
-                if key_prefix in parents:
-                    has_parent = True
-                    break
-            if not has_parent:
-                parents.add(key)
-
-        return list(parents)
-
     def _delta(self):
         """Returns the delta (set, unset) of the changes for a document.
         Gets any values that have been explicitly changed.
@@ -597,8 +572,7 @@ class BaseDocument(object):
         # Handles cases where not loaded from_son but has _id
         doc = self.to_mongo()
 
-        changed_fields = self._get_changed_fields()
-        set_fields = self._prune_changed_fields(changed_fields)
+        set_fields = self._get_changed_fields()
         unset_data = {}
         parts = []
         if hasattr(self, '_changed_fields'):
