@@ -19,7 +19,7 @@ _dbs = {}
 
 
 def register_connection(alias, name=None, host=None, port=None,
-                        read_preference=False,
+                        read_preference=pymongo.ReadPreference.PRIMARY,
                         username=None, password=None, authentication_source=None,
                         **kwargs):
     """Add a connection.
@@ -74,7 +74,7 @@ def disconnect(alias=DEFAULT_CONNECTION_NAME):
     global _dbs
 
     if alias in _connections:
-        get_connection(alias=alias).disconnect()
+        get_connection(alias=alias).close()
         del _connections[alias]
     if alias in _dbs:
         del _dbs[alias]

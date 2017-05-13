@@ -94,7 +94,7 @@ class FindAndModifyTest(unittest.TestCase):
         Doc(id=1, value=1).save()
 
         old_doc = Doc.objects(id=1).only("id").modify(set__value=-1)
-        self.assertEqual(old_doc.to_mongo(), {"_id": 1})
+        self.assertEqual(dict(old_doc.to_mongo()), {"_id": 1})
         self.assertDbEqual([{"_id": 0, "value": 0}, {"_id": 1, "value": -1}])
 
 
