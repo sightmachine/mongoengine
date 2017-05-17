@@ -291,8 +291,10 @@ class Document(BaseDocument):
             if '_id' not in doc:
                 object_id = collection.insert_one(doc).inserted_id
             elif created:
-                # If created is true then the delta will not be in sync with the
-                # document; we must upsert the document to preserve all fields.
+                # If `created` is true then _delta() will be out of sync. Any fields
+                # set via the constructor will be missing from the delta and will not
+                # be stored in mongo. We perform an upsert to work around the broken
+                # change tracking logic.
                 object_id = doc['_id']
                 collection.replace_one({"_id": object_id}, doc, upsert=True)
             else:
