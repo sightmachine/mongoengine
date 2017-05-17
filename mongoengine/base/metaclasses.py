@@ -271,7 +271,6 @@ class TopLevelDocumentMetaclass(DocumentMetaclass):
                 'indexes': [],  # indexes to be ensured at runtime
                 'id_field': None,
                 'index_background': False,
-                'index_drop_dups': False,
                 'index_opts': None,
                 'delete_rules': None,
                 'allow_inheritance': None,

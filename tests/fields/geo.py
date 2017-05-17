@@ -6,6 +6,7 @@ import unittest
 
 from mongoengine import *
 from mongoengine.connection import get_db
+from pymongo.errors import OperationFailure
 
 __all__ = ("GeoFieldTest", )
 
@@ -338,10 +339,11 @@ class GeoFieldTest(unittest.TestCase):
 
         list(Parent.objects)
 
-        collection = Parent._get_collection()
-        info = collection.index_information()
-
-        self.assertFalse('location_2d' in info)
+        with self.assertRaises(OperationFailure):
+            collection = Parent._get_collection()
+            # In pymongo 3.x _get_collection() will not create a collection
+            # that has no indexes defined, so index_information() fails.
+            collection.index_information()
 
         self.assertEqual(len(Parent._geo_indices()), 0)
         self.assertEqual(len(Location._geo_indices()), 1)

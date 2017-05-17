@@ -319,31 +319,6 @@ class QuerySetTest(unittest.TestCase):
         query = query.filter(boolfield=True)
         self.assertEqual(query.count(), 1)
 
-    def test_update_write_concern(self):
-        """Test that passing write_concern works"""
-
-        self.Person.drop_collection()
-
-        write_concern = {"fsync": True}
-
-        author, created = self.Person.objects.get_or_create(
-            name='Test User', write_concern=write_concern)
-        author.save(write_concern=write_concern)
-
-        result = self.Person.objects.update(
-            set__name='Ross', write_concern={"w": 1})
-        self.assertEqual(result, 1)
-        result = self.Person.objects.update(
-            set__name='Ross', write_concern={"w": 0})
-        self.assertEqual(result, None)
-
-        result = self.Person.objects.update_one(
-            set__name='Test User', write_concern={"w": 1})
-        self.assertEqual(result, 1)
-        result = self.Person.objects.update_one(
-            set__name='Test User', write_concern={"w": 0})
-        self.assertEqual(result, None)
-
     def test_update_update_has_a_value(self):
         """Test to ensure that update is passed a value to update to"""
         self.Person.drop_collection()
@@ -696,11 +671,11 @@ class QuerySetTest(unittest.TestCase):
                 blogs.append(Blog(title="post %s" % i, posts=[post1, post2]))
 
             Blog.objects.insert(blogs, load_bulk=False)
-            if (get_connection().max_wire_version <= 1):
-                self.assertEqual(q, 1)
-            else:
-                # profiling logs each doc now in the bulk op
-                self.assertEqual(q, 99)
+            self.assertEqual(q, 1)
+
+        self.assertEqual(Blog.objects.count(), 99)
+        for blog in blogs:
+            Blog.objects.get(title=blog.title)  # should be present
 
         Blog.drop_collection()
         Blog.ensure_indexes()
@@ -709,11 +684,11 @@ class QuerySetTest(unittest.TestCase):
             self.assertEqual(q, 0)
 
             Blog.objects.insert(blogs)
-            if (get_connection().max_wire_version <= 1):
-                self.assertEqual(q, 2)  # 1 for insert, and 1 for in bulk fetch
-            else:
-                # 99 for insert, and 1 for in bulk fetch
-                self.assertEqual(q, 100)
+            self.assertEqual(q, 2)  # 1 for insert, and 1 for in bulk fetch
+
+        self.assertEqual(Blog.objects.count(), 99)
+        for blog in blogs:
+            Blog.objects.get(title=blog.title)  # should be present
 
         Blog.drop_collection()
 
@@ -778,10 +753,6 @@ class QuerySetTest(unittest.TestCase):
         self.assertRaises(NotUniqueError, throw_operation_error_not_unique)
         self.assertEqual(Blog.objects.count(), 2)
 
-        Blog.objects.insert([blog2, blog3], write_concern={"w": 0,
-                                                           'continue_on_error': True})
-        self.assertEqual(Blog.objects.count(), 3)
-
     def test_get_changed_fields_query_count(self):
 
         class Person(Document):
@@ -841,43 +812,33 @@ class QuerySetTest(unittest.TestCase):
 
             self.assertEqual(q, 3)
 
-    def test_slave_okay(self):
-        """Ensures that a query can take slave_okay syntax
-        """
-        person1 = self.Person(name="User A", age=20)
-        person1.save()
-        person2 = self.Person(name="User B", age=30)
-        person2.save()
-
-        # Retrieve the first person from the database
-        person = self.Person.objects.slave_okay(True).first()
-        self.assertTrue(isinstance(person, self.Person))
-        self.assertEqual(person.name, "User A")
-        self.assertEqual(person.age, 20)
-
     def test_cursor_args(self):
         """Ensures the cursor args can be set as expected
         """
         p = self.Person.objects
         # Check default
-        self.assertEqual(p._cursor_args,
-                         {'snapshot': False, 'slave_okay': False, 'timeout': True})
+        self.assertEqual(p._cursor_args, {'no_cursor_timeout': False})
 
-        p = p.snapshot(False).slave_okay(False).timeout(False)
-        self.assertEqual(p._cursor_args,
-                         {'snapshot': False, 'slave_okay': False, 'timeout': False})
+        p = p.snapshot(False)
+        self.assertEqual(p._cursor_args, {'no_cursor_timeout': False})
 
-        p = p.snapshot(True).slave_okay(False).timeout(False)
-        self.assertEqual(p._cursor_args,
-                         {'snapshot': True, 'slave_okay': False, 'timeout': False})
+        p = p.snapshot(True)
+        self.assertEqual(p._cursor_args, {
+            'modifiers': {'$snapshot': True},
+            'no_cursor_timeout': False,
+        })
 
-        p = p.snapshot(True).slave_okay(True).timeout(False)
-        self.assertEqual(p._cursor_args,
-                         {'snapshot': True, 'slave_okay': True, 'timeout': False})
+        p = p.timeout(False)
+        self.assertEqual(p._cursor_args, {
+            'modifiers': {'$snapshot': True},
+            'no_cursor_timeout': True,
+        })
 
-        p = p.snapshot(True).slave_okay(True).timeout(True)
-        self.assertEqual(p._cursor_args,
-                         {'snapshot': True, 'slave_okay': True, 'timeout': True})
+        p = p.max_time_ms(100)
+        self.assertEqual(p._cursor_args, {
+            'modifiers': {'$maxTimeMS': 100, '$snapshot': True},
+            'no_cursor_timeout': True,
+        })
 
     def test_repeated_iteration(self):
         """Ensure that QuerySet rewinds itself one iteration finishes.
@@ -1002,7 +963,7 @@ class QuerySetTest(unittest.TestCase):
         """Ensure filters can be chained together.
         """
         class Blog(Document):
-            id = StringField(unique=True, primary_key=True)
+            id = StringField(primary_key=True)
 
         class BlogPost(Document):
             blog = ReferenceField(Blog)
@@ -1111,13 +1072,13 @@ class QuerySetTest(unittest.TestCase):
             BlogPost.objects.filter(title='whatever').first()
             self.assertEqual(len(q.get_ops()), 1)
             self.assertEqual(
-                q.get_ops()[0]['query']['$orderby'], {u'published_date': -1})
+                q.get_ops()[0]['query']['sort'], {u'published_date': -1})
 
         with db_ops_tracker() as q:
             BlogPost.objects.filter(title='whatever').order_by().first()
             self.assertEqual(len(q.get_ops()), 1)
             print q.get_ops()[0]['query']
-            self.assertFalse('$orderby' in q.get_ops()[0]['query'])
+            self.assertFalse('sort' in q.get_ops()[0]['query'])
 
     def test_no_ordering_for_get(self):
         """ Ensure that Doc.objects.get doesn't use any ordering.
@@ -1136,13 +1097,13 @@ class QuerySetTest(unittest.TestCase):
         with db_ops_tracker() as q:
             BlogPost.objects.get(title='whatever')
             self.assertEqual(len(q.get_ops()), 1)
-            self.assertFalse('$orderby' in q.get_ops()[0]['query'])
+            self.assertFalse('sort' in q.get_ops()[0]['query'])
 
         # Ordering should be ignored for .get even if we set it explicitly
         with db_ops_tracker() as q:
             BlogPost.objects.order_by('-title').get(title='whatever')
             self.assertEqual(len(q.get_ops()), 1)
-            self.assertFalse('$orderby' in q.get_ops()[0]['query'])
+            self.assertFalse('sort' in q.get_ops()[0]['query'])
 
     def test_find_embedded(self):
         """Ensure that an embedded document is properly returned from a query.
@@ -2854,7 +2815,7 @@ class QuerySetTest(unittest.TestCase):
             meta = {'indexes': [
                 {'fields': ['$title', "$content"],
                  'default_language': 'portuguese',
-                 'weight': {'title': 10, 'content': 2}
+                 'weights': {'title': 10, 'content': 2}
                  }
             ]}
 
@@ -2913,7 +2874,7 @@ class QuerySetTest(unittest.TestCase):
         self.assertEqual(query._query, {'$text': {'$search': 'brasil'}})
         cursor_args = query._cursor_args
         self.assertEqual(
-            cursor_args['fields'], {'_text_score': {'$meta': 'textScore'}})
+            cursor_args['projection'], {'_text_score': {'$meta': 'textScore'}})
 
         text_scores = [i.get_text_score() for i in query]
         self.assertEqual(len(text_scores), 3)
@@ -3970,21 +3931,6 @@ class QuerySetTest(unittest.TestCase):
         doc.save()
         self.assertEqual(MyDoc.objects.only('test__47').get().test['47'], 1)
 
-    def test_read_preference(self):
-        class Bar(Document):
-            pass
-
-        Bar.drop_collection()
-        bars = list(Bar.objects(read_preference=ReadPreference.PRIMARY))
-        self.assertEqual([], bars)
-
-        self.assertRaises(ConfigurationError, Bar.objects,
-                          read_preference='Primary')
-
-        bars = Bar.objects(read_preference=ReadPreference.SECONDARY_PREFERRED)
-        self.assertEqual(
-            bars._read_preference, ReadPreference.SECONDARY_PREFERRED)
-
     def test_json_simple(self):
 
         class Embedded(EmbeddedDocument):
@@ -4332,7 +4278,7 @@ class QuerySetTest(unittest.TestCase):
     def test_query_reference_to_custom_pk_doc(self):
 
         class A(Document):
-            id = StringField(unique=True, primary_key=True)
+            id = StringField(primary_key=True)
 
         class B(Document):
             a = ReferenceField(A)
@@ -4454,7 +4400,7 @@ class QuerySetTest(unittest.TestCase):
             op = q.db.system.profile.find({"ns":
                                            {"$ne": "%s.system.indexes" % q.db.name}})[0]
 
-            self.assertFalse('$orderby' in op['query'],
+            self.assertFalse('sort' in op['query'],
                              'BaseQuerySet cannot use orderby in if stmt')
 
         with query_counter() as p:
@@ -4465,7 +4411,7 @@ class QuerySetTest(unittest.TestCase):
             op = p.db.system.profile.find({"ns":
                                            {"$ne": "%s.system.indexes" % q.db.name}})[0]
 
-            self.assertTrue('$orderby' in op['query'],
+            self.assertTrue('sort' in op['query'],
                             'BaseQuerySet cannot remove orderby in for loop')
 
     def test_bool_with_ordering_from_meta_dict(self):
@@ -4490,7 +4436,7 @@ class QuerySetTest(unittest.TestCase):
             op = q.db.system.profile.find({"ns":
                                            {"$ne": "%s.system.indexes" % q.db.name}})[0]
 
-            self.assertFalse('$orderby' in op['query'],
+            self.assertFalse('sort' in op['query'],
                              'BaseQuerySet must remove orderby from meta in boolen test')
 
             self.assertEqual(Person.objects.first().name, 'A')

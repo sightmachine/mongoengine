@@ -4,7 +4,6 @@ import hashlib
 import pymongo
 import re
 
-from pymongo.read_preferences import ReadPreference
 from bson import ObjectId
 from bson.dbref import DBRef
 from mongoengine import signals
@@ -237,7 +236,7 @@ class Document(BaseDocument):
         return True
 
     def save(self, force_insert=False, validate=True, clean=True,
-             write_concern=None,  cascade=None, cascade_kwargs=None,
+              cascade=None, cascade_kwargs=None,
              _refs=None, save_condition=None, **kwargs):
         """Save the :class:`~mongoengine.Document` to the database. If the
         document already exists, it will be updated, otherwise it will be
@@ -248,14 +247,6 @@ class Document(BaseDocument):
         :param validate: validates the document; set to ``False`` to skip.
         :param clean: call the document clean method, requires `validate` to be
             True.
-        :param write_concern: Extra keyword arguments are passed down to
-            :meth:`~pymongo.collection.Collection.save` OR
-            :meth:`~pymongo.collection.Collection.insert`
-            which will be used as options for the resultant
-            ``getLastError`` command.  For example,
-            ``save(..., write_concern={w: 2, fsync: True}, ...)`` will
-            wait until at least two servers have recorded the write and
-            will force an fsync on the primary server.
         :param cascade: Sets the flag for cascading saves.  You can set a
             default by setting "cascade" in the document __meta__
         :param cascade_kwargs: (optional) kwargs dictionary to be passed throw
@@ -286,9 +277,6 @@ class Document(BaseDocument):
         if validate:
             self.validate(clean=clean)
 
-        if write_concern is None:
-            write_concern = {"w": 1}
-
         doc = self.to_mongo()
 
         created = ('_id' not in doc or self._created or force_insert)
@@ -300,11 +288,15 @@ class Document(BaseDocument):
             collection = self._get_collection()
             if self._meta.get('auto_create_index', True):
                 self.ensure_indexes()
-            if created:
-                if force_insert:
-                    object_id = collection.insert(doc, **write_concern)
-                else:
-                    object_id = collection.save(doc, **write_concern)
+            if '_id' not in doc:
+                object_id = collection.insert_one(doc).inserted_id
+            elif created:
+                # If `created` is true then _delta() will be out of sync. Any fields
+                # set via the constructor will be missing from the delta and will not
+                # be stored in mongo. We perform an upsert to work around the broken
+                # change tracking logic.
+                object_id = doc['_id']
+                collection.replace_one({"_id": object_id}, doc, upsert=True)
             else:
                 object_id = doc['_id']
                 updates, removals = self._delta()
@@ -320,13 +312,6 @@ class Document(BaseDocument):
                     actual_key = self._db_field_map.get(k, k)
                     select_dict[actual_key] = doc[actual_key]
 
-                def is_new_object(last_error):
-                    if last_error is not None:
-                        updated = last_error.get("updatedExisting")
-                        if updated is not None:
-                            return not updated
-                    return created
-
                 update_query = {}
 
                 if updates:
@@ -335,9 +320,9 @@ class Document(BaseDocument):
                     update_query["$unset"] = removals
                 if updates or removals:
                     upsert = save_condition is None
-                    last_error = collection.update(select_dict, update_query,
-                                                   upsert=upsert, **write_concern)
-                    created = is_new_object(last_error)
+                    result = collection.update_one(select_dict, update_query,
+                                                   upsert=upsert)
+                    created = result.upserted_id is not None
 
             if cascade is None:
                 cascade = self._meta.get(
@@ -347,7 +332,6 @@ class Document(BaseDocument):
                 kwargs = {
                     "force_insert": force_insert,
                     "validate": validate,
-                    "write_concern": write_concern,
                     "cascade": cascade
                 }
                 if cascade_kwargs:  # Allow granular control over cascades
@@ -440,22 +424,15 @@ class Document(BaseDocument):
         # Need to add shard key to query, or you get an error
         return self._qs.filter(**self._object_key).update_one(**kwargs)
 
-    def delete(self, **write_concern):
+    def delete(self):
         """Delete the :class:`~mongoengine.Document` from the database. This
         will only take effect if the document has been previously saved.
 
-        :param write_concern: Extra keyword arguments are passed down which
-            will be used as options for the resultant
-            ``getLastError`` command.  For example,
-            ``save(..., write_concern={w: 2, fsync: True}, ...)`` will
-            wait until at least two servers have recorded the write and
-            will force an fsync on the primary server.
         """
         signals.pre_delete.send(self.__class__, document=self)
 
         try:
-            self._qs.filter(
-                **self._object_key).delete(write_concern=write_concern, _from_doc_delete=True)
+            self._qs.filter(**self._object_key).delete(_from_doc_delete=True)
         except pymongo.errors.OperationFailure, err:
             message = u'Could not delete document (%s)' % err.message
             raise OperationError(message)
@@ -543,9 +520,8 @@ class Document(BaseDocument):
 
         if not self.pk:
             raise self.DoesNotExist("Document does not exist")
-        obj = self._qs.read_preference(ReadPreference.PRIMARY).filter(
-            **self._object_key).only(*fields).limit(1
-                                                    ).select_related(max_depth=max_depth)
+        obj = self._qs.filter(**self._object_key).only(*fields).limit(1
+                  ).select_related(max_depth=max_depth)
 
         if obj:
             obj = obj[0]
@@ -620,8 +596,7 @@ class Document(BaseDocument):
         db.drop_collection(cls._get_collection_name())
 
     @classmethod
-    def ensure_index(cls, key_or_list, drop_dups=False, background=False,
-                     **kwargs):
+    def ensure_index(cls, key_or_list, background=False, **kwargs):
         """Ensure that the given indexes are in place.
 
         :param key_or_list: a single index key or a list of index keys (to
@@ -631,11 +606,10 @@ class Document(BaseDocument):
         index_spec = cls._build_index_spec(key_or_list)
         index_spec = index_spec.copy()
         fields = index_spec.pop('fields')
-        index_spec['drop_dups'] = drop_dups
         index_spec['background'] = background
         index_spec.update(kwargs)
 
-        return cls._get_collection().ensure_index(fields, **index_spec)
+        return cls._get_collection().create_index(fields, **index_spec)
 
     @classmethod
     def ensure_indexes(cls):
@@ -647,7 +621,6 @@ class Document(BaseDocument):
                   `auto_create_index` to False in the documents meta data
         """
         background = cls._meta.get('index_background', False)
-        drop_dups = cls._meta.get('index_drop_dups', False)
         index_opts = cls._meta.get('index_opts') or {}
         index_cls = cls._meta.get('index_cls', True)
 
@@ -672,14 +645,13 @@ class Document(BaseDocument):
                 cls_indexed = cls_indexed or includes_cls(fields)
                 opts = index_opts.copy()
                 opts.update(spec)
-                collection.ensure_index(fields, background=background,
-                                        drop_dups=drop_dups, **opts)
+                collection.create_index(fields, background=background, **opts)
 
         # If _cls is being used (for polymorphism), it needs an index,
         # only if another index doesn't begin with _cls
         if (index_cls and not cls_indexed and
                 cls._meta.get('allow_inheritance', ALLOW_INHERITANCE) is True):
-            collection.ensure_index('_cls', background=background,
+            collection.create_index('_cls', background=background,
                                     **index_opts)
 
     @classmethod

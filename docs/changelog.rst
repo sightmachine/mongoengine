@@ -2,6 +2,12 @@
 Changelog
 =========
 
+Changes in 0.9.0+sm3
+====================
+- Port mongoengine to work with pymongo 3.x. This change is mostly backwards
+  compatible with 0.9.0, except that read and write concern can no longer be
+  controlled on a per-operation basis.
+
 Changes in 0.9.0+sm2
 ====================
 - Extended auto_dereference=False to skip more redundant operations while saving

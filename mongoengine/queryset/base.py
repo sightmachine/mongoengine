@@ -12,7 +12,7 @@ from bson.code import Code
 from bson import json_util
 import pymongo
 import pymongo.errors
-from pymongo.common import validate_read_preference
+from pymongo.collection import ReturnDocument
 
 from mongoengine import signals
 from mongoengine.connection import get_db
@@ -58,8 +58,6 @@ class BaseQuerySet(object):
         self._snapshot = False
         self._timeout = True
         self._class_check = True
-        self._slave_okay = False
-        self._read_preference = None
         self._iter = False
         self._scalar = []
         self._none = False
@@ -253,8 +251,7 @@ class BaseQuerySet(object):
         """
         return self._document(**kwargs).save()
 
-    def get_or_create(self, write_concern=None, auto_save=True,
-                      *q_objs, **query):
+    def get_or_create(self, auto_save=True, *q_objs, **query):
         """Retrieve unique object or create, if it doesn't exist. Returns a
         tuple of ``(object, created)``, where ``object`` is the retrieved or
         created object and ``created`` is a boolean specifying whether a new
@@ -270,10 +267,6 @@ class BaseQuerySet(object):
             mongoDB other approaches should be investigated, to ensure you
             don't accidentally duplicate data when using this method.  This is
             now scheduled to be removed before 1.0
-
-        :param write_concern: optional extra keyword arguments used if we
-            have to create a new document.
-            Passes any write_concern onto :meth:`~mongoengine.Document.save`
 
         :param auto_save: if the object is to be saved automatically if
             not found.
@@ -298,7 +291,7 @@ class BaseQuerySet(object):
             doc = self._document(**query)
 
             if auto_save:
-                doc.save(write_concern=write_concern)
+                doc.save()
             return doc, True
 
     def first(self):
@@ -311,19 +304,12 @@ class BaseQuerySet(object):
             result = None
         return result
 
-    def insert(self, doc_or_docs, load_bulk=True, write_concern=None):
+    def insert(self, doc_or_docs, load_bulk=True):
         """bulk insert documents
 
         :param docs_or_doc: a document or list of documents to be inserted
         :param load_bulk (optional): If True returns the list of document
             instances
-        :param write_concern: Extra keyword arguments are passed down to
-                :meth:`~pymongo.collection.Collection.insert`
-                which will be used as options for the resultant
-                ``getLastError`` command.  For example,
-                ``insert(..., {w: 2, fsync: True})`` will wait until at least
-                two servers have recorded the write and will force an fsync on
-                each server being written to.
 
         By default returns document instances, set ``load_bulk`` to False to
         return just ``ObjectIds``
@@ -331,9 +317,6 @@ class BaseQuerySet(object):
         .. versionadded:: 0.5
         """
         Document = _import_class('Document')
-
-        if write_concern is None:
-            write_concern = {}
 
         docs = doc_or_docs
         return_one = False
@@ -354,17 +337,19 @@ class BaseQuerySet(object):
 
         signals.pre_bulk_insert.send(self._document, documents=docs)
         try:
-            ids = self._collection.insert(raw, **write_concern)
-        except pymongo.errors.DuplicateKeyError, err:
+            ids = self._collection.insert_many(raw).inserted_ids
+        except pymongo.errors.BulkWriteError as err:
             message = 'Could not save document (%s)'
-            raise NotUniqueError(message % unicode(err))
-        except pymongo.errors.OperationFailure, err:
-            message = 'Could not save document (%s)'
-            if re.match('^E1100[01] duplicate key', unicode(err)):
-                # E11000 - duplicate key error index
-                # E11001 - duplicate key on update
-                message = u'Tried to save duplicate unique keys (%s)'
-                raise NotUniqueError(message % unicode(err))
+            for error in err.details['writeErrors']:
+                if error['code'] in (11000, 11001):
+                    # E11000 - duplicate key error index
+                    # E11001 - duplicate key on update
+                    message = u'Tried to save duplicate unique keys (%s)'
+                    raise NotUniqueError(message % unicode(error['errmsg']))
+            for key in ('writeErrors', 'writeConcernErrors'):
+                if err.details.get(key):
+                    error = err.details[key][0]
+                    raise OperationError(message % unicode(error['errmsg']))
             raise OperationError(message % unicode(err))
 
         if not load_bulk:
@@ -391,15 +376,9 @@ class BaseQuerySet(object):
             return 0
         return self._cursor.count(with_limit_and_skip=with_limit_and_skip)
 
-    def delete(self, write_concern=None, _from_doc_delete=False):
+    def delete(self, _from_doc_delete=False):
         """Delete the documents matched by the query.
 
-        :param write_concern: Extra keyword arguments are passed down which
-            will be used as options for the resultant
-            ``getLastError`` command.  For example,
-            ``save(..., write_concern={w: 2, fsync: True}, ...)`` will
-            wait until at least two servers have recorded the write and
-            will force an fsync on the primary server.
         :param _from_doc_delete: True when called from document delete therefore
             signals will have been triggered so don't loop.
 
@@ -407,9 +386,6 @@ class BaseQuerySet(object):
         """
         queryset = self.clone()
         doc = queryset._document
-
-        if write_concern is None:
-            write_concern = {}
 
         # Handle deletes where skips or limits have been applied or
         # there is an untriggered delete signal
@@ -423,7 +399,7 @@ class BaseQuerySet(object):
         if call_document_delete:
             cnt = 0
             for doc in queryset:
-                doc.delete(write_concern=write_concern)
+                doc.delete()
                 cnt += 1
             return cnt
 
@@ -451,30 +427,22 @@ class BaseQuerySet(object):
                 ref_q_count = ref_q.count()
                 if (doc != document_cls and ref_q_count > 0
                         or (doc == document_cls and ref_q_count > 0)):
-                    ref_q.delete(write_concern=write_concern)
+                    ref_q.delete()
             elif rule == NULLIFY:
                 document_cls.objects(**{field_name + '__in': self}).update(
-                    write_concern=write_concern, **{'unset__%s' % field_name: 1})
+                    **{'unset__%s' % field_name: 1})
             elif rule == PULL:
                 document_cls.objects(**{field_name + '__in': self}).update(
-                    write_concern=write_concern,
                     **{'pull_all__%s' % field_name: self})
 
-        result = queryset._collection.remove(queryset._query, **write_concern)
-        return result["n"]
+        result = queryset._collection.delete_many(queryset._query)
+        return result.deleted_count
 
-    def update(self, upsert=False, multi=True, write_concern=None,
-               full_result=False, **update):
+    def update(self, upsert=False, multi=True, full_result=False, **update):
         """Perform an atomic update on the fields matched by the query.
 
         :param upsert: Any existing document with that "_id" is overwritten.
         :param multi: Update multiple documents.
-        :param write_concern: Extra keyword arguments are passed down which
-            will be used as options for the resultant
-            ``getLastError`` command.  For example,
-            ``save(..., write_concern={w: 2, fsync: True}, ...)`` will
-            wait until at least two servers have recorded the write and
-            will force an fsync on the primary server.
         :param full_result: Return the full result rather than just the number
             updated.
         :param update: Django-style update keyword arguments
@@ -483,9 +451,6 @@ class BaseQuerySet(object):
         """
         if not update and not upsert:
             raise OperationError("No update parameters, would remove data")
-
-        if write_concern is None:
-            write_concern = {}
 
         queryset = self.clone()
         query = queryset._query
@@ -499,12 +464,14 @@ class BaseQuerySet(object):
             else:
                 update["$set"] = {"_cls": queryset._document._class_name}
         try:
-            result = queryset._collection.update(query, update, multi=multi,
-                                                 upsert=upsert, **write_concern)
+            if multi:
+                result = queryset._collection.update_many(query, update, upsert=upsert)
+            else:
+                result = queryset._collection.update_one(query, update, upsert=upsert)
             if full_result:
-                return result
+                return result.raw_result
             elif result:
-                return result['n']
+                return result.modified_count + int(result.upserted_id is not None)
         except pymongo.errors.DuplicateKeyError, err:
             raise NotUniqueError(u'Update failed (%s)' % unicode(err))
         except pymongo.errors.OperationFailure, err:
@@ -513,35 +480,22 @@ class BaseQuerySet(object):
                 raise OperationError(message)
             raise OperationError(u'Update failed (%s)' % unicode(err))
 
-    def update_one(self, upsert=False, write_concern=None, **update):
+    def update_one(self, upsert=False, **update):
         """Perform an atomic update on first field matched by the query.
 
         :param upsert: Any existing document with that "_id" is overwritten.
-        :param write_concern: Extra keyword arguments are passed down which
-            will be used as options for the resultant
-            ``getLastError`` command.  For example,
-            ``save(..., write_concern={w: 2, fsync: True}, ...)`` will
-            wait until at least two servers have recorded the write and
-            will force an fsync on the primary server.
         :param update: Django-style update keyword arguments
 
         .. versionadded:: 0.2
         """
-        return self.update(
-            upsert=upsert, multi=False, write_concern=write_concern, **update)
+        return self.update(upsert=upsert, multi=False, **update)
 
-    def modify(self, upsert=False, full_response=False, remove=False, new=False, **update):
+    def modify(self, upsert=False, remove=False, new=False, **update):
         """Update and return the updated document.
 
         Returns either the document before or after modification based on `new`
         parameter. If no documents match the query and `upsert` is false,
         returns ``None``. If upserting and `new` is false, returns ``None``.
-
-        If the full_response parameter is ``True``, the return value will be
-        the entire response object from the server, including the 'ok' and
-        'lastErrorObject' fields, rather than just the modified document.
-        This is useful mainly because the 'lastErrorObject' document holds
-        information about the command's execution.
 
         :param upsert: insert if document doesn't exist (default ``False``)
         :param full_response: return the entire response object from the
@@ -561,26 +515,28 @@ class BaseQuerySet(object):
             raise OperationError(
                 "No update parameters, must either update or remove")
 
+        return_document = ReturnDocument.AFTER if new else ReturnDocument.BEFORE
+
         queryset = self.clone()
         query = queryset._query
         update = transform.update(queryset._document, **update)
         sort = queryset._ordering
 
         try:
-            result = queryset._collection.find_and_modify(
-                query, update, upsert=upsert, sort=sort, remove=remove, new=new,
-                full_response=full_response, **self._cursor_args)
+            if remove:
+                result = queryset._collection.find_one_and_delete(
+                    query, sort=sort, return_document=return_document, **self._cursor_args)
+            else:
+                result = queryset._collection.find_one_and_update(
+                    query, update, sort=sort, return_document=return_document, upsert=upsert,
+                    **self._cursor_args)
         except pymongo.errors.DuplicateKeyError, err:
             raise NotUniqueError(u"Update failed (%s)" % err)
         except pymongo.errors.OperationFailure, err:
             raise OperationError(u"Update failed (%s)" % err)
 
-        if full_response:
-            if result["value"] is not None:
-                result["value"] = self._document._from_son(result["value"], only_fields=self.only_fields)
-        else:
-            if result is not None:
-                result = self._document._from_son(result, only_fields=self.only_fields)
+        if result is not None:
+            result = self._document._from_son(result, only_fields=self.only_fields)
 
         return result
 
@@ -673,7 +629,7 @@ class BaseQuerySet(object):
 
         copy_props = ('_mongo_query', '_initial_query', '_none', '_query_obj',
                       '_where_clause', '_loaded_fields', '_ordering', '_snapshot',
-                      '_timeout', '_class_check', '_slave_okay', '_read_preference',
+                      '_timeout', '_class_check',
                       '_iter', '_scalar', '_as_pymongo', '_as_pymongo_coerce',
                       '_limit', '_skip', '_hint', '_auto_dereference',
                       '_search_text', 'only_fields', '_max_time_ms')
@@ -927,26 +883,6 @@ class BaseQuerySet(object):
         """
         queryset = self.clone()
         queryset._timeout = enabled
-        return queryset
-
-    def slave_okay(self, enabled):
-        """Enable or disable the slave_okay when querying.
-
-        :param enabled: whether or not the slave_okay is enabled
-        """
-        queryset = self.clone()
-        queryset._slave_okay = enabled
-        return queryset
-
-    def read_preference(self, read_preference):
-        """Change the read_preference when querying.
-
-        :param read_preference: override ReplicaSetConnection-level
-            preference.
-        """
-        validate_read_preference('read_preference', read_preference)
-        queryset = self.clone()
-        queryset._read_preference = read_preference
         return queryset
 
     def scalar(self, *fields):
@@ -1383,22 +1319,22 @@ class BaseQuerySet(object):
 
     @property
     def _cursor_args(self):
-        cursor_args = {
-            'snapshot': self._snapshot,
-            'timeout': self._timeout
-        }
-        if self._read_preference is not None:
-            cursor_args['read_preference'] = self._read_preference
-        else:
-            cursor_args['slave_okay'] = self._slave_okay
+        cursor_args = {'no_cursor_timeout': not self._timeout}
+        modifiers = {}
+        if self._max_time_ms is not None:
+            modifiers['$maxTimeMS'] = self._max_time_ms
+        if self._snapshot:
+            modifiers['$snapshot'] = True
+        if modifiers:
+            cursor_args['modifiers'] = modifiers
         if self._loaded_fields:
-            cursor_args['fields'] = self._loaded_fields.as_dict()
+            cursor_args['projection'] = self._loaded_fields.as_dict()
 
         if self._search_text:
-            if 'fields' not in cursor_args:
-                cursor_args['fields'] = {}
+            if 'projection' not in cursor_args:
+                cursor_args['projection'] = {}
 
-            cursor_args['fields']['_text_score'] = {'$meta': "textScore"}
+            cursor_args['projection']['_text_score'] = {'$meta': "textScore"}
 
         return cursor_args
 

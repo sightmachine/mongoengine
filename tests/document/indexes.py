@@ -443,16 +443,17 @@ class IndexesTest(unittest.TestCase):
         obj = Test(a=1)
         obj.save()
 
+        def is_index_only(qs):
+            plan = qs.explain()
+            return plan['executionStats']['totalDocsExamined'] == 0
+
         # Need to be explicit about covered indexes as mongoDB doesn't know if
         # the documents returned might have more keys in that here.
-        query_plan = Test.objects(id=obj.id).exclude('a').explain()
-        self.assertFalse(query_plan['indexOnly'])
+        qs = Test.objects(id=obj.id).exclude('a')
+        self.assertFalse(is_index_only(qs))
 
-        query_plan = Test.objects(id=obj.id).only('id').explain()
-        self.assertTrue(query_plan['indexOnly'])
-
-        query_plan = Test.objects(a=1).only('a').exclude('id').explain()
-        self.assertTrue(query_plan['indexOnly'])
+        qs = Test.objects(a=1).only('a').exclude('id')
+        self.assertTrue(is_index_only(qs))
 
     def test_index_on_id(self):
 
@@ -493,18 +494,10 @@ class IndexesTest(unittest.TestCase):
         self.assertEqual(BlogPost.objects.hint().count(), 10)
         self.assertEqual(BlogPost.objects.hint([('tags', 1)]).count(), 10)
 
-        self.assertEqual(BlogPost.objects.hint([('ZZ', 1)]).count(), 10)
+        def invalid_index_1():
+            return BlogPost.objects.hint([('ZZ', 1)]).count()
 
-        if pymongo.version >= '2.8':
-            self.assertEqual(BlogPost.objects.hint('tags').count(), 10)
-        else:
-            def invalid_index():
-                BlogPost.objects.hint('tags')
-            self.assertRaises(TypeError, invalid_index)
-
-        def invalid_index_2():
-            return BlogPost.objects.hint(('tags', 1))
-        self.assertRaises(Exception, invalid_index_2)
+        self.assertRaises(Exception, invalid_index_1)
 
     def test_unique(self):
         """Ensure that uniqueness constraints are applied to fields.
@@ -702,7 +695,7 @@ class IndexesTest(unittest.TestCase):
         """
 
         class User(Document):
-            name = StringField(primary_key=True, unique=True)
+            name = StringField(primary_key=True)
             password = StringField()
 
         User.drop_collection()
