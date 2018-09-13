@@ -2,6 +2,11 @@
 Changelog
 =========
 
+Changes in 0.9.0+sm4
+====================
+- Remove the default Schema validation which looks for fields in the document that are not in
+  the model.  Bug MA-4863
+
 Changes in 0.9.0+sm3
 ====================
 - Port mongoengine to work with pymongo 3.x. This change is mostly backwards

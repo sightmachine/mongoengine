@@ -70,15 +70,16 @@ class BaseDocument(object):
 
         signals.pre_init.send(self.__class__, document=self, values=values)
 
+        # MA-4863 remove default schema validation
         # Check if there are undefined fields supplied, if so raise an
         # Exception.
-        if not self._dynamic:
-            for var in values.keys():
-                if var not in self._fields.keys() + ['id', 'pk', '_cls', '_text_score']:
-                    msg = (
-                        "The field '{0}' does not exist on the document '{1}'"
-                    ).format(var, self._class_name)
-                    raise FieldDoesNotExist(msg)
+        # if not self._dynamic:
+        #     for var in values.keys():
+        #         if var not in self._fields.keys() + ['id', 'pk', '_cls', '_text_score']:
+        #             msg = (
+        #                 "The field '{0}' does not exist on the document '{1}'"
+        #             ).format(var, self._class_name)
+        #             raise FieldDoesNotExist(msg)
 
         if self.STRICT and not self._dynamic:
             self._data = StrictDict.create(allowed_keys=self._fields_ordered)()
