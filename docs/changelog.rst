@@ -2,6 +2,10 @@
 Changelog
 =========
 
+Changes in 0.9.0+sm5
+====================
+- Fix StopIteration issues for Python 3.7
+
 Changes in 0.9.0+sm4
 ====================
 - Remove the default Schema validation which looks for fields in the document that are not in
