@@ -434,7 +434,7 @@ class Document(BaseDocument):
         try:
             self._qs.filter(**self._object_key).delete(_from_doc_delete=True)
         except pymongo.errors.OperationFailure, err:
-            message = u'Could not delete document (%s)' % err.message
+            message = u'Could not delete document (%s)' % str(message)
             raise OperationError(message)
         signals.post_delete.send(self.__class__, document=self)
 

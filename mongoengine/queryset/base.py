@@ -345,12 +345,12 @@ class BaseQuerySet(object):
                     # E11000 - duplicate key error index
                     # E11001 - duplicate key on update
                     message = u'Tried to save duplicate unique keys (%s)'
-                    raise NotUniqueError(message % unicode(error['errmsg']))
+                    raise NotUniqueError(message % str(error['errmsg']))
             for key in ('writeErrors', 'writeConcernErrors'):
                 if err.details.get(key):
                     error = err.details[key][0]
-                    raise OperationError(message % unicode(error['errmsg']))
-            raise OperationError(message % unicode(err))
+                    raise OperationError(message % str(error['errmsg']))
+            raise OperationError(message % str(err))
 
         if not load_bulk:
             signals.post_bulk_insert.send(
@@ -473,12 +473,12 @@ class BaseQuerySet(object):
             elif result:
                 return result.modified_count + int(result.upserted_id is not None)
         except pymongo.errors.DuplicateKeyError, err:
-            raise NotUniqueError(u'Update failed (%s)' % unicode(err))
+            raise NotUniqueError(u'Update failed (%s)' % str(err))
         except pymongo.errors.OperationFailure, err:
-            if unicode(err) == u'multi not coded yet':
+            if str(err) == u'multi not coded yet':
                 message = u'update() method requires MongoDB 1.1.3+'
                 raise OperationError(message)
-            raise OperationError(u'Update failed (%s)' % unicode(err))
+            raise OperationError(u'Update failed (%s)' % str(err))
 
     def update_one(self, upsert=False, **update):
         """Perform an atomic update on first field matched by the query.
@@ -1018,13 +1018,13 @@ class BaseQuerySet(object):
         map_f_scope = {}
         if isinstance(map_f, Code):
             map_f_scope = map_f.scope
-            map_f = unicode(map_f)
+            map_f = str(map_f)
         map_f = Code(queryset._sub_js_fields(map_f), map_f_scope)
 
         reduce_f_scope = {}
         if isinstance(reduce_f, Code):
             reduce_f_scope = reduce_f.scope
-            reduce_f = unicode(reduce_f)
+            reduce_f = str(reduce_f)
         reduce_f_code = queryset._sub_js_fields(reduce_f)
         reduce_f = Code(reduce_f_code, reduce_f_scope)
 
@@ -1034,7 +1034,7 @@ class BaseQuerySet(object):
             finalize_f_scope = {}
             if isinstance(finalize_f, Code):
                 finalize_f_scope = finalize_f.scope
-                finalize_f = unicode(finalize_f)
+                finalize_f = str(finalize_f)
             finalize_f_code = queryset._sub_js_fields(finalize_f)
             finalize_f = Code(finalize_f_code, finalize_f_scope)
             mr_args['finalize'] = finalize_f
