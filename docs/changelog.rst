@@ -1,6 +1,11 @@
 =========
 Changelog
 =========
+Changes in 0.9.0+sm6
+====================
+Fix more Python 3 issues.
+- replace basic py2-3 issues (unicode, basestring, xrange, iteritems, etc.)
+- exception does not have message attribute
 
 Changes in 0.9.0+sm5
 ====================
