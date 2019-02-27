@@ -35,7 +35,7 @@ def includes_cls(fields):
 
     first_field = None
     if len(fields):
-        if isinstance(fields[0], basestring):
+        if isinstance(fields[0], str):
             first_field = fields[0]
         elif isinstance(fields[0], (list, tuple)) and len(fields[0]):
             first_field = fields[0][0]
@@ -338,17 +338,17 @@ class Document(BaseDocument):
                     kwargs.update(cascade_kwargs)
                 kwargs['_refs'] = _refs
                 self.cascade_save(**kwargs)
-        except pymongo.errors.DuplicateKeyError, err:
+        except pymongo.errors.DuplicateKeyError as err:
             message = u'Tried to save duplicate unique keys (%s)'
-            raise NotUniqueError(message % unicode(err))
-        except pymongo.errors.OperationFailure, err:
+            raise NotUniqueError(message % str(err))
+        except pymongo.errors.OperationFailure as err:
             message = 'Could not save document (%s)'
-            if re.match('^E1100[01] duplicate key', unicode(err)):
+            if re.match('^E1100[01] duplicate key', str(err)):
                 # E11000 - duplicate key error index
                 # E11001 - duplicate key on update
                 message = u'Tried to save duplicate unique keys (%s)'
-                raise NotUniqueError(message % unicode(err))
-            raise OperationError(message % unicode(err))
+                raise NotUniqueError(message % str(err))
+            raise OperationError(message % str(err))
         id_field = self._meta['id_field']
         if created or id_field not in self._meta.get('shard_key', []):
             self[id_field] = self._fields[id_field].to_python(object_id)
@@ -433,8 +433,8 @@ class Document(BaseDocument):
 
         try:
             self._qs.filter(**self._object_key).delete(_from_doc_delete=True)
-        except pymongo.errors.OperationFailure, err:
-            message = u'Could not delete document (%s)' % err.message
+        except pymongo.errors.OperationFailure as err:
+            message = u'Could not delete document (%s)' % str(err)
             raise OperationError(message)
         signals.post_delete.send(self.__class__, document=self)
 

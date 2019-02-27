@@ -358,7 +358,7 @@ class StrictDict(object):
     _special_fields = set(['get', 'pop', 'iteritems', 'items', 'keys', 'create'])
     _classes = {}
     def __init__(self, **kwargs):
-        for k,v in kwargs.iteritems():
+        for k,v in kwargs.items():
             setattr(self, k, v)
     def __getitem__(self, key):
         key = '_reserved_' + key if key in self._special_fields else key
