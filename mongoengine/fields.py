@@ -145,7 +145,7 @@ class URLField(StringField):
             try:
                 request = urllib2.Request(value)
                 urllib2.urlopen(request)
-            except Exception, e:
+            except Exception as e:
                 self.error('This URL appears to be a broken link: %s' % e)
 
 
@@ -217,14 +217,14 @@ class LongField(BaseField):
 
     def to_python(self, value):
         try:
-            value = long(value)
+            value = int(value)
         except ValueError:
             pass
         return value
 
     def validate(self, value):
         try:
-            value = long(value)
+            value = int(value)
         except:
             self.error('%s could not be converted to long' % value)
 
@@ -238,7 +238,7 @@ class LongField(BaseField):
         if value is None:
             return value
 
-        return long(value)
+        return int(value)
 
 
 class FloatField(BaseField):
@@ -337,7 +337,7 @@ class DecimalField(BaseField):
                 value = str(value)
             try:
                 value = decimal.Decimal(value)
-            except Exception, exc:
+            except Exception as exc:
                 self.error('Could not convert value to decimal: %s' % exc)
 
         if self.min_value is not None and value < self.min_value:
@@ -663,12 +663,12 @@ class DynamicField(BaseField):
             value = dict([(k, v) for k, v in enumerate(value)])
 
         data = {}
-        for k, v in value.iteritems():
+        for k, v in value.items():
             data[k] = self.to_mongo(v)
 
         value = data
         if is_list:  # Convert back to a list
-            value = [v for k, v in sorted(data.iteritems(), key=itemgetter(0))]
+            value = [v for k, v in sorted(data.items(), key=itemgetter(0))]
         return value
 
     def to_python(self, value):
@@ -1517,7 +1517,7 @@ class ImageGridFsProxy(GridFSProxy):
         try:
             img = Image.open(file_obj)
             img_format = img.format
-        except Exception, e:
+        except Exception as e:
             raise ValidationError('Invalid image: %s' % e)
 
         # Progressive JPEG
@@ -1838,7 +1838,7 @@ class UUIDField(BaseField):
                 value = str(value)
             try:
                 value = uuid.UUID(value)
-            except Exception, exc:
+            except Exception as exc:
                 self.error('Could not convert to UUID: %s' % exc)
 
 

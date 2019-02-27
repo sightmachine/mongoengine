@@ -172,11 +172,11 @@ class BaseField(object):
             if isinstance(value, (Document, EmbeddedDocument)):
                 if not any(isinstance(value, c) for c in choice_list):
                     self.error(
-                        'Value must be instance of %s' % unicode(choice_list)
+                        'Value must be instance of %s' % str(choice_list)
                     )
             # Choices which are types other than Documents
             elif value not in choice_list:
-                self.error('Value must be one of %s' % unicode(choice_list))
+                self.error('Value must be one of %s' % str(choice_list))
 
         # check validation argument
         if self.validation is not None:
@@ -259,7 +259,7 @@ class ComplexBaseField(BaseField):
         """Convert a MongoDB-compatible type to a Python type.
         """
 
-        if isinstance(value, basestring):
+        if isinstance(value, str):
             return value
         if hasattr(value, 'to_python'):
             return value.to_python()
@@ -303,7 +303,7 @@ class ComplexBaseField(BaseField):
         """Convert a Python type to a MongoDB-compatible type.
         """
 
-        if isinstance(value, basestring):
+        if isinstance(value, str):
             return value
         if not self._auto_dereference:
             return value
@@ -332,10 +332,10 @@ class ComplexBaseField(BaseField):
 
         if self.field:
             value_dict = dict([(key, self.field.to_mongo(item))
-                               for key, item in value.iteritems()])
+                               for key, item in value.items()])
         else:
             value_dict = {}
-            for k, v in value.iteritems():
+            for k, v in value.items():
                 if isinstance(v, Document):
                     # We need the id from the saved object to create the DBRef
                     if v.pk is None:
@@ -381,9 +381,9 @@ class ComplexBaseField(BaseField):
             for k, v in sequence:
                 try:
                     self.field._validate(v)
-                except ValidationError, error:
+                except ValidationError as error:
                     errors[k] = error.errors or error
-                except (ValueError, AssertionError), error:
+                except (ValueError, AssertionError) as error:
                     errors[k] = error
 
             if errors:
@@ -426,10 +426,10 @@ class ObjectIdField(BaseField):
     def to_mongo(self, value):
         if not isinstance(value, ObjectId):
             try:
-                return ObjectId(unicode(value))
-            except Exception, e:
+                return ObjectId(str(value))
+            except Exception as e:
                 # e.message attribute has been deprecated since Python 2.6
-                self.error(unicode(e))
+                self.error(str(e))
         return value
 
     def prepare_query_value(self, op, value):
@@ -437,7 +437,7 @@ class ObjectIdField(BaseField):
 
     def validate(self, value):
         try:
-            ObjectId(unicode(value))
+            ObjectId(str(value))
         except:
             self.error('Invalid Object ID')
 

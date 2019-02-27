@@ -25,7 +25,7 @@ class DeReference(object):
             :class:`~mongoengine.base.ComplexBaseField`
         :param get: A boolean determining if being called by __get__
         """
-        if items is None or isinstance(items, basestring):
+        if items is None or isinstance(items, str):
             return items
 
         # cheapest way to convert a queryset to a list
@@ -71,7 +71,7 @@ class DeReference(object):
                         items = dict([
                             (k, field.to_python(v))
                             if not isinstance(v, (DBRef, Document)) else (k, v)
-                            for k, v in items.iteritems()]
+                            for k, v in items.items()]
                         )
 
         self.reference_map = self._find_references(items)
@@ -99,7 +99,7 @@ class DeReference(object):
         depth += 1
         for k, item in iterator:
             if isinstance(item, (Document, EmbeddedDocument)):
-                for field_name, field in item._fields.iteritems():
+                for field_name, field in item._fields.items():
                     v = item._data.get(field_name, None)
                     if isinstance(v, (DBRef)):
                         reference_map.setdefault(field.document_type, []).append(v.id)
@@ -108,7 +108,7 @@ class DeReference(object):
                     elif isinstance(v, (dict, list, tuple)) and depth <= self.max_depth:
                         field_cls = getattr(getattr(field, 'field', None), 'document_type', None)
                         references = self._find_references(v, depth)
-                        for key, refs in references.iteritems():
+                        for key, refs in references.items():
                             if isinstance(field_cls, (Document, TopLevelDocumentMetaclass)):
                                 key = field_cls
                             reference_map.setdefault(key, []).extend(refs)
@@ -118,7 +118,7 @@ class DeReference(object):
                 reference_map.setdefault(get_document(item['_cls']), []).append(item['_ref'].id)
             elif isinstance(item, (dict, list, tuple)) and depth - 1 <= self.max_depth:
                 references = self._find_references(item, depth - 1)
-                for key, refs in references.iteritems():
+                for key, refs in references.items():
                     reference_map.setdefault(key, []).extend(refs)
 
         return reference_map
@@ -127,12 +127,12 @@ class DeReference(object):
         """Fetch all references and convert to their document objects
         """
         object_map = {}
-        for collection, dbrefs in self.reference_map.iteritems():
+        for collection, dbrefs in self.reference_map.items():
             keys = object_map.keys()
-            refs = list(set([dbref for dbref in dbrefs if unicode(dbref).encode('utf-8') not in keys]))
+            refs = list(set([dbref for dbref in dbrefs if str(dbref).encode('utf-8') not in keys]))
             if hasattr(collection, 'objects'):  # We have a document class for the refs
                 references = collection.objects.in_bulk(refs)
-                for key, doc in references.iteritems():
+                for key, doc in references.items():
                     object_map[key] = doc
             else:  # Generic reference: use the refs data to convert to document
                 if isinstance(doc_type, (ListField, DictField, MapField,)):
@@ -213,7 +213,7 @@ class DeReference(object):
             if k in self.object_map and not is_list:
                 data[k] = self.object_map[k]
             elif isinstance(v, (Document, EmbeddedDocument)):
-                for field_name, field in v._fields.iteritems():
+                for field_name, field in v._fields.items():
                     v = data[k]._data.get(field_name, None)
                     if isinstance(v, (DBRef)):
                         data[k]._data[field_name] = self.object_map.get(v.id, v)

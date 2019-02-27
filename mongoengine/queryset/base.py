@@ -132,7 +132,7 @@ class BaseQuerySet(object):
                 queryset._skip, queryset._limit = key.start, key.stop
                 if key.start and key.stop:
                     queryset._limit = key.stop - key.start
-            except IndexError, err:
+            except IndexError as err:
                 # PyMongo raises an error if key.start == key.stop, catch it,
                 # bin it, kill it.
                 start = key.start or 0
@@ -472,9 +472,9 @@ class BaseQuerySet(object):
                 return result.raw_result
             elif result:
                 return result.modified_count + int(result.upserted_id is not None)
-        except pymongo.errors.DuplicateKeyError, err:
+        except pymongo.errors.DuplicateKeyError as err:
             raise NotUniqueError(u'Update failed (%s)' % str(err))
-        except pymongo.errors.OperationFailure, err:
+        except pymongo.errors.OperationFailure as err:
             if str(err) == u'multi not coded yet':
                 message = u'update() method requires MongoDB 1.1.3+'
                 raise OperationError(message)
@@ -530,9 +530,9 @@ class BaseQuerySet(object):
                 result = queryset._collection.find_one_and_update(
                     query, update, sort=sort, return_document=return_document, upsert=upsert,
                     **self._cursor_args)
-        except pymongo.errors.DuplicateKeyError, err:
+        except pymongo.errors.DuplicateKeyError as err:
             raise NotUniqueError(u"Update failed (%s)" % err)
-        except pymongo.errors.OperationFailure, err:
+        except pymongo.errors.OperationFailure as err:
             raise OperationError(u"Update failed (%s)" % err)
 
         if result is not None:
@@ -1050,7 +1050,7 @@ class BaseQuerySet(object):
         else:
             map_reduce_function = 'map_reduce'
 
-            if isinstance(output, basestring):
+            if isinstance(output, str):
                 mr_args['out'] = output
 
             elif isinstance(output, dict):
@@ -1496,13 +1496,13 @@ class BaseQuerySet(object):
             }
         """
         total, data, types = self.exec_js(freq_func, field)
-        values = dict([(types.get(k), int(v)) for k, v in data.iteritems()])
+        values = dict([(types.get(k), int(v)) for k, v in data.items()])
 
         if normalize:
             values = dict([(k, float(v) / total) for k, v in values.items()])
 
         frequencies = {}
-        for k, v in values.iteritems():
+        for k, v in values.items():
             if isinstance(k, float):
                 if int(k) == k:
                     k = int(k)
@@ -1524,7 +1524,7 @@ class BaseQuerySet(object):
                 field = ".".join(f.db_field for f in
                                  document._lookup_field(field.split('.')))
                 ret.append(field)
-            except LookUpError, err:
+            except LookUpError as err:
                 found = False
                 for subdoc in subclasses:
                     try:
@@ -1533,7 +1533,7 @@ class BaseQuerySet(object):
                         ret.append(subfield)
                         found = True
                         break
-                    except LookUpError, e:
+                    except LookUpError as e:
                         pass
 
                 if not found:
@@ -1601,7 +1601,7 @@ class BaseQuerySet(object):
 
             if isinstance(data, dict):
                 new_data = {}
-                for key, value in data.iteritems():
+                for key, value in data.items():
                     new_path = '%s.%s' % (path, key) if path else key
 
                     if all_fields:

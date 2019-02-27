@@ -56,7 +56,7 @@ def query(_doc_cls=None, _field_operation=False, **query):
             # Switch field names to proper names [set in Field(name='foo')]
             try:
                 fields = _doc_cls._lookup_field(parts)
-            except Exception, e:
+            except Exception as e:
                 raise InvalidQueryError(e)
             parts = []
 
@@ -65,7 +65,7 @@ def query(_doc_cls=None, _field_operation=False, **query):
             cleaned_fields = []
             for field in fields:
                 append_field = True
-                if isinstance(field, basestring):
+                if isinstance(field, str):
                     parts.append(field)
                     append_field = False
                 # is last and CachedReferenceField
@@ -83,9 +83,9 @@ def query(_doc_cls=None, _field_operation=False, **query):
             singular_ops = [None, 'ne', 'gt', 'gte', 'lt', 'lte', 'not']
             singular_ops += STRING_OPERATORS
             if op in singular_ops:
-                if isinstance(field, basestring):
+                if isinstance(field, str):
                     if (op in STRING_OPERATORS and
-                            isinstance(value, basestring)):
+                            isinstance(value, str)):
                         StringField = _import_class('StringField')
                         value = StringField.prepare_query_value(op, value)
                     else:
@@ -130,7 +130,7 @@ def query(_doc_cls=None, _field_operation=False, **query):
                 if ('$maxDistance' in value_dict and '$near' in value_dict):
                     value_son = SON()
                     if isinstance(value_dict['$near'], dict):
-                        for k, v in value_dict.iteritems():
+                        for k, v in value_dict.items():
                             if k == '$maxDistance':
                                 continue
                             value_son[k] = v
@@ -142,7 +142,7 @@ def query(_doc_cls=None, _field_operation=False, **query):
                             value_son['$near'][
                                 '$maxDistance'] = value_dict['$maxDistance']
                     else:
-                        for k, v in value_dict.iteritems():
+                        for k, v in value_dict.items():
                             if k == '$maxDistance':
                                 continue
                             value_son[k] = v
@@ -205,7 +205,7 @@ def update(_doc_cls=None, **update):
             # Switch field names to proper names [set in Field(name='foo')]
             try:
                 fields = _doc_cls._lookup_field(parts)
-            except Exception, e:
+            except Exception as e:
                 raise InvalidQueryError(e)
             parts = []
 
@@ -213,7 +213,7 @@ def update(_doc_cls=None, **update):
             appended_sub_field = False
             for field in fields:
                 append_field = True
-                if isinstance(field, basestring):
+                if isinstance(field, str):
                     # Convert the S operator to $
                     if field == 'S':
                         field = '$'
