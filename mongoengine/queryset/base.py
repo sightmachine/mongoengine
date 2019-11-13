@@ -1319,7 +1319,9 @@ class BaseQuerySet(object):
 
     @property
     def _cursor_args(self):
-        cursor_args = {'no_cursor_timeout': not self._timeout}
+        cursor_args = {}
+        if not self._timeout:
+            cursor_args["no_cursor_timeout"] = True
         modifiers = {}
         if self._max_time_ms is not None:
             modifiers['$maxTimeMS'] = self._max_time_ms

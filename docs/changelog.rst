@@ -1,6 +1,10 @@
 =========
 Changelog
 =========
+Changes in 0.9.0+sm7
+====================
+- Only set no_cursor_timeout when requested ([#2160](https://github.com/MongoEngine/mongoengine/pull/2160))
+
 Changes in 0.9.0+sm6
 ====================
 Fix more Python 3 issues.
